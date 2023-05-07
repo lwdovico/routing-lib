@@ -32,71 +32,103 @@ def from_sumo_to_igraph_network(road_network):
     """
     
     
-    edges = []
-    nodes = set()
-
-    edges_attr = {"id":[], "length":[], "speed_limit":[], "traveltime":[]}
-
+    nodes_dict = {}
+    edges_dict = {}
+    connections_list = []
+    conn_attr = {"id":[], "length":[], "speed_limit":[], "traveltime":[]}
     
-    # Iterate over all the (regular) edges in the road network
-    for edge in road_network.getEdges():
-
-
-        # The ID of the from and to nodes of the edge will be:
-        # <edge_id>_from -> <edge_id>_to
-        id_from = edge.getID()+"_from"
-        id_to = edge.getID()+"_to"
-
-        # add edge & attributes
-        edges.append([id_from, id_to])
-
-        edges_attr["id"].append(edge.getID())
-        edges_attr["length"].append(edge.getLength())
-        edges_attr["speed_limit"].append(edge.getSpeed())
-        edges_attr["traveltime"].append(edge.getLength()/edge.getSpeed())
-
-        # add nodes to the set
-        nodes.add(id_from)
-        nodes.add(id_to)
-
-        
-    # create the connections
-
-    # Iterate over all nodes in the road network
     for node in road_network.getNodes():
+        in_edges = [edge for edge in list(node.getIncoming())]
+        out_edges = [edge for edge in list(node.getOutgoing())]
+        
+        # compute length connection
+        unique_connections = set()
 
-        # Get the connections of the node
-        connections = list(node.getConnections())
-
-        # Iterate over all connections of the node
-        for conn in connections:
-
-            # Get the IDs of the from and to edges
-            from_edge_conn = conn.getFrom().getID()+"_to"
-            to_edge_conn = conn.getTo().getID()+"_from"
-
-
-            # add edge & attributes
-            edges.append([from_edge_conn, to_edge_conn])
-
-            edges_attr["id"].append("connection")
-            edges_attr["length"].append(0)
-            edges_attr["speed_limit"].append(-1)
-            edges_attr["traveltime"].append(0)
-
-            # add nodes to the set
-            nodes.add(from_edge_conn)
-            nodes.add(to_edge_conn)
+        for c in node.getConnections():
+            p = (c.getFrom().getID(), c.getTo().getID())
+            unique_connections.add(p)
+        
+        # Fully connected nodes
+        if len(in_edges)*len(out_edges) == len(unique_connections):
+            nodes_dict[node.getID()] = {"in": in_edges, "out": out_edges, "fc": 1}
             
-            
-     # create the Igraph Graph
-    
-    G = Graph(directed=True)
-    G.add_vertices(list(nodes))
-    G.add_edges(edges, edges_attr)
-    
-    return G
+            for e in in_edges:
+                edge = e.getID()
+                if edge in edges_dict:
+                    edges_dict[edge]["to"] = node.getID()
+                else:
+                    edges_dict[edge] = {"to": node.getID()}
+                    edges_dict[edge]["id"] = edge
+                    edges_dict[edge]["length"] = e.getLength()
+                    edges_dict[edge]["speed_limit"] = e.getSpeed()
+                    edges_dict[edge]["traveltime"] = e.getLength()/e.getSpeed()
+                    
+            for e in out_edges:
+                edge = e.getID()
+                if edge in edges_dict:
+                    edges_dict[edge]["from"] = node.getID()
+                else:
+                    edges_dict[edge] = {"from": node.getID()}
+                    edges_dict[edge]["id"] = edge
+                    edges_dict[edge]["length"] = e.getLength()
+                    edges_dict[edge]["speed_limit"] = e.getSpeed()
+                    edges_dict[edge]["traveltime"] = e.getLength()/e.getSpeed()
+        # Nodes with connections
+        else:
+            # add new connection nodes
+            for e in in_edges:
+                edge = e.getID()
+                node_id = edge+"_to"
+                nodes_dict[node_id] = {"in": [edge], "fc": 0}
+                if edge in edges_dict:
+                    edges_dict[edge]["to"] = node_id
+                else:
+                    edges_dict[edge] = {"to": node_id}
+                    edges_dict[edge]["id"] = edge
+                    edges_dict[edge]["length"] = e.getLength()
+                    edges_dict[edge]["speed_limit"] = e.getSpeed()
+                    edges_dict[edge]["traveltime"] = e.getLength()/e.getSpeed()
+            for e in out_edges:
+                edge = e.getID()
+                node_id = edge+"_from"
+                nodes_dict[node_id] = {"out": [edge], "fc": 0}
+                if edge in edges_dict:
+                    edges_dict[edge]["from"] = node_id
+                else:
+                    edges_dict[edge] = {"from": node_id}
+                    edges_dict[edge]["id"] = edge
+                    edges_dict[edge]["length"] = e.getLength()
+                    edges_dict[edge]["speed_limit"] = e.getSpeed()
+                    edges_dict[edge]["traveltime"] = e.getLength()/e.getSpeed()
+                    
+            for conn in node.getConnections():
+                from_edge = conn.getFrom().getID()
+                to_edge = conn.getTo().getID()
 
+                connections_list.append([from_edge+"_to", to_edge+"_from"])
+                conn_attr["id"].append("connection")
+                conn_attr["length"].append(0)
+                conn_attr["speed_limit"].append(-1)
+                conn_attr["traveltime"].append(0)
+                
+    edges_list = []
+    edges_attr = {"id":[], "length":[], "speed_limit":[], "traveltime":[]}
+    
+    for edge in edges_dict.keys():
+        edges_list.append((edges_dict[edge]["from"], edges_dict[edge]["to"]))
+        edges_attr["id"].append(edge)
+        edges_attr["length"].append(edges_dict[edge]["length"])
+        edges_attr["speed_limit"].append(edges_dict[edge]["speed_limit"])
+        edges_attr["traveltime"].append(edges_dict[edge]["traveltime"])
+        
+    G_igraph_new = igraph.Graph(directed=True)
+    G_igraph_new.add_vertices(list(nodes_dict.keys()))
+    G_igraph_new.add_edges(edges_list, edges_attr)
+    G_igraph_new.add_edges(connections_list, conn_attr)
+    
+    G_igraph_new["edge_sumo_ig"] = {e["id"]: e.index for e in G_igraph_new.es}
+        
+    return G_igraph_new
 
 
 def get_shortest_path(G, from_edge, to_edge, attribute):
@@ -115,16 +147,23 @@ def get_shortest_path(G, from_edge, to_edge, attribute):
         - 'ig' (List[str]): The igraph edges ID of the path
         - 'cost' (float): The total cost of the path
     """
-    index_from = G.vs.find(name=f"{from_edge}_from").index
-    index_to = G.vs.find(name=f"{to_edge}_to").index
+    
+    edge_from = G.es[G["edge_sumo_ig"][from_edge]]
+    edge_to = G.es[G["edge_sumo_ig"][to_edge]]
+    
+    index_from = edge_from.target
+    index_to = edge_to.source
+        
+    id_ig_edge_from = edge_from.index
+    id_ig_edge_to = edge_to.index
     
     path = G.get_shortest_paths(index_from, index_to, weights=attribute, output="epath")
     
-    edges_ig = path[0]
+    edges_ig = [id_ig_edge_from]+path[0]+[id_ig_edge_to]
     
     total_cost = compute_path_cost(G, edges_ig, attribute)
 
-    edges_sumo = [e for e in G.es[path[0]]["id"] if e != "connection"]
+    edges_sumo = [from_edge]+[e for e in G.es[path[0]]["id"] if e != "connection"]
 
     return {"sumo": edges_sumo, "ig": edges_ig, "cost": total_cost}
 
@@ -143,8 +182,8 @@ def compute_path_cost(G: igraph.Graph, edge_list: List[str], attribute: str) -> 
     Returns:
     total_cost (float): The total cost of the path
     """
-        
-    total_cost = sum([e for e in G.es[edge_list][attribute] if e != "connection"])
+
+    total_cost = sum(G.es[edge_list][attribute])
 
     return total_cost
 
