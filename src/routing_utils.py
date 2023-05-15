@@ -163,7 +163,7 @@ def get_shortest_path(G, from_edge, to_edge, attribute):
     
     total_cost = compute_path_cost(G, edges_ig, attribute)
 
-    edges_sumo = [from_edge]+[e for e in G.es[path[0]]["id"] if e != "connection"]
+    edges_sumo = [from_edge]+[e for e in G.es[path[0]]["id"] if e != "connection"]+[to_edge]
 
     return {"sumo": edges_sumo, "ig": edges_ig, "cost": total_cost}
 
