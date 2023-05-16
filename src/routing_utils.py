@@ -187,7 +187,7 @@ def test_sumo_ig_shortest_paths(road_network_sumo, G, n_tests, attribute, th=1e-
             
 
 
-def visualize_paths(path_list, road_network, colors=None, opacity=1, map_f=None):
+def visualize_paths(path_list, road_network, colors=None, opacity=1, map_f=None, dotted = False, show_markers = False):
         
     if colors is None:
         color_list = ["blue"]*len(path_list)
@@ -202,12 +202,19 @@ def visualize_paths(path_list, road_network, colors=None, opacity=1, map_f=None)
 
     if map_f is None:
         map_f = folium.Map(location=[paths_gps[0][1][1], paths_gps[0][1][0]], tiles='cartodbpositron', zoom_start=13)
-    
+
     for path, col in zip(paths_gps, color_list): 
-        
-        folium.PolyLine(locations=[list(reversed(coord)) 
-                           for coord in path], weigth=4, color=col, opacity=opacity).add_to(map_f)
-  
+          
+          folium.PolyLine(locations=[list(reversed(coord)) for coord in path], 
+                          weigth=4, color=col, opacity=opacity, 
+                          dash_array='10' if dotted else None).add_to(map_f)
+
+    if show_markers:
+        lon_from, lat_from = paths_gps[0][0]
+        lon_to, lat_to = paths_gps[0][-1]
+        folium.Marker(location=[lat_from, lon_from], icon = folium.Icon(color='lightgreen'), popup='ORIGIN').add_to(map_f)
+        folium.Marker(location=[lat_to, lon_to], icon = folium.Icon(color='lightred'), popup='TARGET').add_to(map_f)
+
     return map_f
 
 
