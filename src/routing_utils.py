@@ -359,7 +359,7 @@ def compute_ellipse(G, from_edge, to_edge, phi = 1.5, eta = 2):
 
     def get_pythagoras(s_lon, s_lat, t_lon, t_lat):
         # Calculate the distance using the Pythagorean theorem
-        return sqrt((t_lon - s_lon)**2 + (t_lat - s_lat)**2)
+        return math.sqrt((t_lon - s_lon)**2 + (t_lat - s_lat)**2)
 
     def get_angle(s_lon, s_lat, t_lon, t_lat):
         # Calculate the angle in radians
