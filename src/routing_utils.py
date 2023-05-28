@@ -10,6 +10,9 @@ from tqdm.notebook import tqdm
 
 from typing import List
 
+# for the ellipse
+import math
+from matplotlib.patches import Ellipse
 
 
 """ utilities for road routing """
@@ -179,6 +182,7 @@ def from_sumo_to_igraph_network(road_network):
     G_igraph_new['edge_vertices'] = dict() # to convert edges to vertices
     G_igraph_new['vertices_edge'] = dict() # to convert vertices to edges
     G_igraph_new['connection_edges'] = set() # to store the connection edges
+    G_igraph_new['vertices_coords'] = set() # to store the location of vertices (for the ellipse)
 
     for e in G_igraph_new.es:
         if e['id'] != 'connection':
@@ -193,6 +197,11 @@ def from_sumo_to_igraph_network(road_network):
             G_igraph_new['vertices_edge'][(e.target, e.source)] = {'length' : e['length'], 'traveltime' : e['traveltime'], 'id' : G_igraph_new.get_eid(e.target, e.source)}
         except:
             pass
+        
+        G_igraph_new['vertices_coords'].add((e.source, e['coordinates']['from']))
+        G_igraph_new['vertices_coords'].add((e.target, e['coordinates']['to']))
+    
+    G_igraph_new['vertices_coords'] = np.array(sorted(G_igraph_new['vertices_coords']), dtype=object)
         
     return G_igraph_new
 
@@ -342,3 +351,43 @@ def edge_list_to_gps_list(edge_list, road_network):
         
         
     return gps_points
+
+def compute_ellipse(G, from_edge, to_edge, phi = 1.5, eta = 2):
+
+    def get_center(s_lon, s_lat, t_lon, t_lat):
+        return (s_lon + t_lon) / 2, (s_lat + t_lat) / 2
+
+    def get_pythagoras(s_lon, s_lat, t_lon, t_lat):
+        # Calculate the distance using the Pythagorean theorem
+        return sqrt((t_lon - s_lon)**2 + (t_lat - s_lat)**2)
+
+    def get_angle(s_lon, s_lat, t_lon, t_lat):
+        # Calculate the angle in radians
+        angle_rad = math.atan2(t_lat - s_lat, t_lon - s_lon)
+        # Convert the angle to degrees
+        angle_deg = math.degrees(angle_rad)
+        return angle_deg
+
+    if type(from_edge) != str or type(to_edge) != str:
+        from_edge, to_edge = from_edge.getID(), to_edge.getID()
+
+
+    s_lon, s_lat = G.es.find(id = from_edge)['coordinates']['to']
+    t_lon, t_lat = G.es.find(id = to_edge)['coordinates']['from']
+    
+    center_point = get_center(s_lon, s_lat, t_lon, t_lat)
+    st_dist = get_pythagoras(s_lon, s_lat, t_lon, t_lat)
+    angle = get_angle(s_lon, s_lat, t_lon, t_lat)
+
+    # draw the ellipse using matplotlib
+    ellipse = Ellipse(center_point, st_dist * phi, st_dist * phi / eta, angle)
+
+    return ellipse
+
+def ellipse_subgraph(G, from_edge, to_edge, phi = 1.5, eta = 2):
+    ellipse = compute_ellipse(G, from_edge, to_edge, phi = phi, eta = eta)
+    vertices_coords = G['vertices_coords']
+    idx_in_ellipse = ellipse.contains_points(vertices_coords[:,1].tolist())
+    ellipsed_vert = vertices_coords[:,0][idx_in_ellipse].tolist()
+    
+    return ellipse, G.subgraph(ellipsed_vert)
