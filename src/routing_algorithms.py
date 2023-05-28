@@ -174,7 +174,7 @@ def k_disjointed(G, from_edge, to_edge, k, attribute, all_distinct=True, remove_
     def update_edge_weights_pp(edge_list, attribute, p=0):
         for e in edge_list:
             if e["id"] != "connection":
-                e[attribute]*=(1+p)
+                e[attribute] = p if e[attribute] < p else p
                 
     # arguments beyond edge_list and attribute (that are mandatory)
     dict_args = {"p": 1e6}
@@ -770,3 +770,79 @@ def plateau_algorithm(G, from_edge, to_edge, k, epsilon, attribute, max_iter = 1
     del G.vs['tmp_cost']
 
     return output
+
+#Adding the Yen algorithm of k-shortest paths
+
+def k_shortest_paths(G, from_edge, to_edge, k, attribute):
+    """
+    The Yen algorithm of k-shortest paths
+    
+    The builtin function of igraph didn't work because of the connection edges of our network.
+    This solution even if wrote in python was made as fast as the builtin algorithm.
+    """
+    source = G['edge_vertices'][from_edge.getID()]['to']
+    target = G['edge_vertices'][to_edge.getID()]['from']
+
+    def yen_spur_path(G, spur_edge, target):
+        spur_source = G.es[spur_edge].source
+        original_cost = G.es[spur_edge][attribute]
+        G.es[spur_edge][attribute] = 1e6
+        
+        try:
+            spur_path = G.get_shortest_paths(spur_source, target, weights = attribute, output="epath")[0]
+        except:
+            spur_path = []
+
+        G.es[spur_edge][attribute] = original_cost
+
+        return spur_path
+
+    k_sp = []
+    tmp_paths = []
+    
+    path = G.get_shortest_paths(source, target, weights = attribute, output="epath")[0]
+    cost = sum(G.es[path][attribute])
+    previous_cost = 0
+    k_sp.append(path)
+    
+    for p in range(1, k):
+        for i in range(len(k_sp[p-1])-1):
+            spur_edge = k_sp[p-1][i]
+            root_path = k_sp[p-1][:i]
+            
+            if G.es[spur_edge]['id'] == 'connection':
+                continue
+
+            spur_path = yen_spur_path(G, spur_edge, target)
+            
+            if spur_path != []:
+                total_path = root_path + spur_path
+                cost = sum(G.es[total_path][attribute])
+
+                # otherwise connection edges may be the only variation
+                if cost > previous_cost:
+                    tmp_paths.append((cost, total_path))
+        
+        tmp_paths.sort()
+        k_sp.append(tmp_paths[0][1])
+        previous_cost = tmp_paths[0][0]
+        tmp_paths = []
+
+    result_list = list()
+
+    for path in k_sp:
+        path_info_dict = dict()
+        origin_to_add = [G['edge_sumo_ig'][from_edge.getID()]] if [G['edge_sumo_ig'][from_edge.getID()]] != path[0] else []
+        dest_to_add = [G['edge_sumo_ig'][to_edge.getID()]] if [G['edge_sumo_ig'][to_edge.getID()]] != path[-1] else []
+
+        path = origin_to_add + path + dest_to_add
+        epath = G.es[path]
+
+        path_dict = dict()
+        path_dict['edges'] = list(filter(lambda x: x != 'connection', epath['id']))
+        path_dict['ig'] = path
+        path_dict['original_cost'] = sum(epath[attribute])
+        path_dict['penalized_cost'] = path_dict['original_cost']
+        result_list.append(path_dict)
+    
+    return result_list
