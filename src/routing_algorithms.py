@@ -27,7 +27,7 @@ def apply_penalization(G, from_edge, to_edge, k, attribute, fun_2_apply, argumen
         if not(all_distinct and sp_k["sumo"] in path_list):
 
             original_cost = compute_path_cost(G, sp_k["ig"], attribute)
-            result_list.append({"edges": sp_k["sumo"], "original_cost": original_cost, "penalized_cost": sp_k["cost"]})
+            result_list.append({"edges": sp_k["sumo"], "ig" : sp_k["ig"], "original_cost": original_cost, "penalized_cost": sp_k["cost"]})
             path_list.append(sp_k["sumo"])
 
 
