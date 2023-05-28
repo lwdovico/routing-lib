@@ -2,6 +2,10 @@ from routing_utils import *
 from routing_measures import dis, div 
 import itertools
 
+# KSPML and KSPMO
+from queue import PriorityQueue
+from collections import Counter
+
 import warnings 
 
 
@@ -284,4 +288,260 @@ def k_mdnsp(G, from_edge, to_edge, k, epsilon, attribute, remove_tmp_attribute=T
     return result_list
 
 
+# Function to compute the next simple single-via path
+def next_ssvp_by_length(G, from_edge, to_edge, attribute, Q):
 
+    if type(from_edge) != str or type(to_edge) != str:
+        from_edge, to_edge = from_edge.getID(), to_edge.getID()
+
+    def get_path_cost(G, edge_idxs):
+        return sum(G.es[edge_idxs][attribute])
+
+    def get_vertex_sumo(G, edge, pos):
+        return G['edge_vertices'][edge][pos]
+
+    def get_shortest_path_dict(vertex, mode):
+        sps_dict = dict()
+        sps = G.get_shortest_paths(vertex, mode = mode, weights=attribute, output = 'epath')
+        
+        ordering = -1 if mode == 'in' else 1
+
+        for p in sps:
+            # this way it's always it's indexed to the varying destination edge
+            if p != []:
+                last_edge = p[-1]
+                sps_dict[last_edge] = p[::ordering]
+            
+        return sps_dict
+
+    first_call = True
+
+    # extract the from and to verteces of the origin and destination edges
+    s = get_vertex_sumo(G, from_edge, pos = 'to')
+    t = get_vertex_sumo(G, to_edge, pos = 'from')
+
+    # set of shortest paths from origin to every other node indexed by the node
+    Ts_to_N = get_shortest_path_dict(s, mode = 'out')
+    # set of shortest paths from every node to destination indexed by the node 
+    TN_to_t = get_shortest_path_dict(t, mode = 'in')
+
+    try:
+        # retrieving the shortest path (the one going to t)
+        psp = Ts_to_N[G['edge_sumo_ig'][G.vs[t]['name']]]
+    except KeyError:
+        # if it is just after a crossing it is too difficult to retrieve the correct edge
+        psp = G.get_shortest_paths(G['edge_vertices'][from_edge]['to'], 
+                                   G['edge_vertices'][to_edge]['from'], 
+                                   weights=attribute, output="epath")[0]
+    
+    yield psp
+    
+    # Ts_to_N.keys() & TN_to_t.keys() is a check for reached edges
+    for n_edge in Ts_to_N.keys() & TN_to_t.keys():
+
+        # check for edge not in shortest path
+        not_in_sp = n_edge != s and n_edge != t and n_edge not in psp
+
+        if not_in_sp:
+            # the shortest path from s to n and its length
+            ps_to_n = Ts_to_N[n_edge]
+            len_ps_to_n = get_path_cost(G, ps_to_n)
+
+            # the shortest path from n to t and its length
+            pn_to_t = TN_to_t[n_edge]
+            len_pn_to_t = get_path_cost(G, pn_to_t)
+
+            # add the node, the lengths, the current vertex and the paths
+            Q.put((len_ps_to_n + len_pn_to_t, n_edge, ps_to_n[:-1] + pn_to_t))
+
+    del Ts_to_N, TN_to_t
+
+    while not Q.empty():
+
+        path_length, n_edge, ps_n_pn_t = Q.get()
+        
+        # if the path is not simple some vertex are repeated
+        simple_counter = Counter(ps_n_pn_t) # I count the frequency
+        
+
+        
+        try:
+            # if there is no repeated vertex yield the path
+            if max(simple_counter.values()) == 1: 
+                yield ps_n_pn_t
+                
+            else: # otherwise remove the edges in between the repetition
+
+                # get the edge indexes repeating themeselves
+                freq_edge = [x for x, count in simple_counter.items() if count > 1]
+
+                # find the first edge repetition
+                loop_edge = sorted(freq_edge, key = lambda x: ps_n_pn_t.index(x))[0]
+
+                # set the first slicing to that vertex position in the path list
+                start_index = ps_n_pn_t.index(loop_edge)
+                # get the last position of that vertex
+                end_index = len(ps_n_pn_t) - ps_n_pn_t[::-1].index(loop_edge) - 1
+                # slice off the elements in between
+                ps_n_pn_t = ps_n_pn_t[:start_index] + ps_n_pn_t[end_index+1:]
+
+                # get the path length
+                path_length = get_path_cost(G, ps_n_pn_t)
+
+                # re-add the path to the queue
+                Q.put((path_length, loop_edge, ps_n_pn_t))
+
+        # This error comes when the path is empty, I return
+        except ValueError:
+            yield []
+
+    return None
+
+
+def kspml(G, from_edge, to_edge, k, theta, attribute, max_iter = 1000):
+
+    if type(from_edge) != str or type(to_edge) != str:
+        from_edge, to_edge = from_edge.getID(), to_edge.getID()
+
+    # just the opposite of the dissimilarity
+    def Sim(pi, pj):
+        return 1 - dis(G, pi, pj, attribute)
+
+    PkDPwML = list()
+
+    # initialize a priority queue (it will be based on length)
+    Q = PriorityQueue()
+
+    ssvpbl = next_ssvp_by_length(G, from_edge, to_edge, attribute, Q)
+
+    p = next(ssvpbl)
+
+    if p == []: 
+        # just in the case the from and to edges where not directly connected
+        return [{'edges' : [], 'ig' : [], 'original_cost' : 0, 'penalized_cost' : 0}]
+
+    iter = 0
+
+    while p is not None and len(PkDPwML) < k and iter <= max_iter:
+        iter += 1
+        # if the similarity is lower than theta for any two paths
+        sim_condition = list()
+
+        for p_prime in PkDPwML:
+            try:
+                p_p_sim = Sim(p, p_prime) < theta
+                sim_condition.append(p_p_sim)
+
+            # It means the path are identical (it may happen with path of 3 edges or less)
+            except ZeroDivisionError: 
+                sim_condition.append(False)
+                break
+            
+            if not p_p_sim:
+                break
+
+        if all(sim_condition):
+            PkDPwML.append(p)
+
+        try:
+            p = next(ssvpbl)
+        except StopIteration: # when the generator ends
+            p = None
+            
+    del Q
+    del ssvpbl
+
+    # to output as in the framework
+    PkDPwML_List = list()
+
+    for path in PkDPwML:
+        path = [G['edge_sumo_ig'][from_edge]]+path+[G['edge_sumo_ig'][to_edge]]
+        epath = G.es[path]
+        path_dict = dict()
+        path_dict['edges'] = list(filter(lambda x: x != 'connection', epath['id']))
+        path_dict['ig'] = path
+        path_dict['original_cost'] = sum(epath[attribute])
+        path_dict['penalized_cost'] = path_dict['original_cost']
+        PkDPwML_List.append(path_dict)
+
+    return PkDPwML_List
+
+
+def kspmo(G, from_edge, to_edge, k, theta, attribute, max_iter = 1000):
+
+    if type(from_edge) != str or type(to_edge) != str:
+        from_edge, to_edge = from_edge.getID(), to_edge.getID()
+
+    # just the opposite of the dissimilarity
+
+    def sim_5(G, path0, path1, attribute):
+
+        intersection = set(path0).intersection(path1)
+        sum_intersection = sum(G.es[intersection][attribute])
+        
+        l1 = sum(G.es[path0][attribute])
+        l2 = sum(G.es[path1][attribute])
+
+        return sum_intersection/(min(l1, l2))
+
+    def Sim(pi, pj):
+        return sim_5(G, pi, pj, attribute)
+
+    PkDPwML = list()
+    
+    # initialize a priority queue (it will be based on length)
+    Q = PriorityQueue()
+
+    ssvpbl = next_ssvp_by_length(G, from_edge, to_edge, attribute, Q)
+
+    p = next(ssvpbl)
+
+    if p == []: 
+        # just in the case the from and to edges where not directly connected
+        return [{'edges' : [], 'ig' : [], 'original_cost' : 0, 'penalized_cost' : 0}]
+
+    iter = 0
+
+    while p is not None and len(PkDPwML) < k and iter <= max_iter:
+        iter += 1
+        # if the similarity is lower than theta for any two paths
+        sim_condition = list()
+
+        for p_prime in PkDPwML:
+            try:
+                p_p_sim = Sim(p, p_prime) < theta
+                sim_condition.append(p_p_sim)
+
+            # It means the path are identical (it may happen with path of 3 edges or less)
+            except ZeroDivisionError: 
+                sim_condition.append(False)
+                break
+            
+            if not p_p_sim:
+                break
+
+        if all(sim_condition):
+            PkDPwML.append(p)
+
+        try:
+            p = next(ssvpbl)
+        except StopIteration: # when the generator ends
+            p = None
+
+    del Q
+    del ssvpbl
+
+    # to output as in the framework
+    PkDPwML_List = list()
+
+    for path in PkDPwML:
+        path = [G['edge_sumo_ig'][from_edge]]+path+[G['edge_sumo_ig'][to_edge]]
+        epath = G.es[path]
+        path_dict = dict()
+        path_dict['edges'] = list(filter(lambda x: x != 'connection', epath['id']))
+        path_dict['ig'] = path
+        path_dict['original_cost'] = sum(epath[attribute])
+        path_dict['penalized_cost'] = path_dict['original_cost']
+        PkDPwML_List.append(path_dict)
+
+    return PkDPwML_List
