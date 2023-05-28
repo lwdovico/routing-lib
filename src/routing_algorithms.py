@@ -545,3 +545,228 @@ def kspmo(G, from_edge, to_edge, k, theta, attribute, max_iter = 1000):
         PkDPwML_List.append(path_dict)
 
     return PkDPwML_List
+
+
+def plateau_algorithm(G, from_edge, to_edge, k, epsilon, attribute, max_iter = 1000, compute_in_subgraph = True):
+
+    assert epsilon >= 1, "Epsilon can be only greater or equal to 1"
+
+    if type(from_edge) != str or type(to_edge) != str:
+        from_edge, to_edge = from_edge.getID(), to_edge.getID()
+    
+    if compute_in_subgraph:
+        G.vs['original_idx'] = range(len(G.vs))
+        
+        or_G = G
+        _, G = ellipse_subgraph(G, from_edge, to_edge, phi = epsilon, eta = epsilon)
+
+    def get_vertex(sumo_edge, pos):
+        if pos == 'from':
+            return G.es.find(id = sumo_edge).source
+        if pos == 'to':
+            return G.es.find(id = sumo_edge).target
+      
+
+    def make_edges(vertices):
+        edges = list()
+        prev_vert = vertices[0]
+        for vid in range(1, len(vertices)):
+            curr_vert = vertices[vid]
+            curr_edge = G['vertices_edge'][(G.vs[prev_vert]['original_idx'], G.vs[curr_vert]['original_idx'])]['id']
+            edges.append(curr_edge)
+            prev_vert = curr_vert
+        return edges
+
+    def dist(vertices, attribute):
+        edges = make_edges(vertices)
+        return sum(or_G.es[edges][attribute])
+
+    def set_costs_get_trees(G, s, t):
+        ve_cost = G['vertices_edge']
+        
+        rearranged_costs_s = {v : float('inf') for v in range(len(G.vs))}
+        rearranged_costs_t = {v : float('inf') for v in range(len(G.vs))}
+
+        sps_s = G.get_shortest_paths(s, mode = 'out', weights=attribute, output = 'vpath')
+        sps_t = G.get_shortest_paths(t, mode = 'in' , weights=attribute, output = 'vpath')
+
+        # traversing the tree forward
+        for p in sps_s:
+            cost = 0
+            if p:
+                v_0 = p[0]
+                rearranged_costs_s[v_0] = cost
+
+                for vid in range(1, len(p)):
+                    v_1 = p[vid]
+                    cost += ve_cost[(G.vs[v_0]['original_idx'], G.vs[v_1]['original_idx'])][attribute]
+                    if cost < rearranged_costs_s[v_1]:
+                        rearranged_costs_s[v_1] = cost
+                    v_0 = v_1
+        origin_id_costs = np.array(list(rearranged_costs_s.items()))
+                
+        # traversing the tree backward
+        for p in sps_t:
+            cost = 0
+            if p:
+                v_0 = p[0]
+                rearranged_costs_t[v_0] = cost
+
+                for vid in range(1, len(p)):
+                    v_1 = p[vid]
+                    # since it is backward I go from v1 to v0
+                    cost += ve_cost[(G.vs[v_1]['original_idx'], G.vs[v_0]['original_idx'])][attribute]
+                    if cost < rearranged_costs_t[v_1]:
+                        rearranged_costs_t[v_1] = cost
+                    v_0 = v_1
+
+        dest_id_costs = np.array(list(rearranged_costs_t.items()))
+
+        # summing the costs
+        sum_val = origin_id_costs + dest_id_costs
+        # order the costs (col 1) with the original edge indexes (col 0)
+        new_cost = sum_val[:,1][np.argsort(sum_val[:,0])].tolist()
+
+        # assigning the new cost attribute
+        G.vs['tmp_cost'] = new_cost
+
+        to_return = {x[-1] : x for x in sps_s if x != []}, {x[-1] : x[::-1] for x in sps_t if x != []}
+
+        del new_cost
+        del sum_val
+        del dest_id_costs, origin_id_costs
+        del rearranged_costs_s, rearranged_costs_t
+        del sps_s, sps_t
+
+        return to_return
+    
+    def query_k_plateau(G, k, plateaus_list, sp, d_sp, epsilon, sps_s, sps_t):
+
+        def plateaus_in_branch(branch, plateau):
+            branch = set(branch)
+            return all(vert in branch for vert in plateau)
+
+        def valid_plateau(d_svt, d_sp, epsilon = 1):
+            
+            return d_svt <= d_sp * epsilon
+
+        yield sp, sp
+
+        set_branches = {k : set(v) for k, v in sps_s.items()}
+
+        for plateau in plateaus_list:
+
+            set_plateau = set(plateau)
+            
+            for key, set_branch in set_branches.items():
+              
+                if set_plateau.issubset(set_branch):
+
+                    branch = sps_s[key]
+                    
+                    try:
+                        indexes = sorted([branch.index(e) for e in plateau])
+                    except ValueError:
+                        continue
+
+                    plateau_edges = branch[indexes[0]:indexes[-1]+1]
+                    
+                    to_plateau = branch[:indexes[0]]
+                    from_plateau = sps_t[branch[indexes[-1]]][1:]
+                    
+                    if to_plateau and from_plateau:
+                        alternative_path = to_plateau + plateau_edges + from_plateau
+
+                        d_svt = dist(to_plateau, attribute) + dist(from_plateau, attribute)
+                        
+                        if valid_plateau(d_svt, d_sp, epsilon):
+                            yield plateau_edges, alternative_path
+                            del set_branches[key]
+                            break
+
+    s = get_vertex(from_edge, 'to')
+    t = get_vertex(to_edge, 'from')
+
+    sps_s, sps_t = set_costs_get_trees(G, s, t)
+
+    try:
+        sp = sps_s[t]
+    except KeyError:
+        return [{'edges' : [], 'ig' : [], 'plateau' : [], 'original_cost' : 0, 'penalized_cost' : 0}]
+
+    d_sp = dist(sp, attribute)
+
+    # descending order so that plateaus in the center (highest cost) are first
+    vertices_by_new_cost = sorted(zip(range(len(G.vs)), np.array(G.vs['tmp_cost'])),
+                                  key = lambda x: -x[1])
+
+    plateaus = list()
+
+    for key, group in itertools.groupby(vertices_by_new_cost, key=lambda x: x[1]):
+        if key != float('inf'):
+            plateau_group = list()
+            for item in group:
+                plateau_group.append(item[0])
+            if len(plateau_group) > 1:
+                plateaus.append(plateau_group)
+
+    plateaus = sorted(plateaus, key=lambda x: -sum(G.vs[x]['tmp_cost']))
+    
+    del vertices_by_new_cost
+
+    query = query_k_plateau(G, k, plateaus, sp, d_sp, epsilon, sps_s, sps_t)
+
+    plateau_paths = list()
+
+    # just the opposite of the dissimilarity
+    def Sim(pi, pj):
+        return 1 - dis(G, pi, pj, attribute)
+
+    p = next(query)
+
+    iter = 0
+
+    while p is not None and len(plateau_paths) < k and iter <= max_iter:
+        iter += 1
+        # I used the similarity as I reconstructed the plateaus from the paths
+        # there may be some wich would be reconstructed as subsets or supersets
+
+        theta = 0.2
+        sim_condition = list()
+
+        for p_prime in plateau_paths:
+            p_p_sim = Sim(p[0], p_prime[0]) < theta
+            sim_condition.append(p_p_sim)
+            
+            if not p_p_sim:
+                break
+
+        if all(sim_condition):
+            plateau_paths.append(p)
+
+        try:
+            p = next(query)
+        except StopIteration: # when the generator ends
+            p = None
+
+
+    del sps_s, sps_t
+    del query
+
+    output = list()
+    
+    for plateau, path in plateau_paths:
+        plateau = make_edges(plateau)
+        path = [or_G['edge_sumo_ig'][from_edge]]+make_edges(path)+[or_G['edge_sumo_ig'][to_edge]]
+        epath = or_G.es[path]
+        path_dict = dict()
+        path_dict['edges'] = list(filter(lambda x: x != 'connection', epath['id']))
+        path_dict['ig'] = path
+        path_dict['plateau'] = list(filter(lambda x: x != 'connection', or_G.es[plateau]['id']))
+        path_dict['original_cost'] = sum(epath[attribute])
+        path_dict['penalized_cost'] = path_dict['original_cost']
+        output.append(path_dict)
+
+    del G.vs['tmp_cost']
+
+    return output
