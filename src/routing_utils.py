@@ -35,7 +35,7 @@ def from_sumo_to_igraph_network(road_network):
     nodes_dict = {}
     edges_dict = {}
     connections_list = []
-    conn_attr = {"id":[], "length":[], "speed_limit":[], "traveltime":[]}
+    conn_attr = {"id":[], "length":[], "speed_limit":[], "traveltime":[], "coordinates":[], "center_coord" : []}
     
     for node in road_network.getNodes():
         in_edges = [edge for edge in list(node.getIncoming())]
@@ -56,6 +56,12 @@ def from_sumo_to_igraph_network(road_network):
                 edge = e.getID()
                 if edge in edges_dict:
                     edges_dict[edge]["to"] = node.getID()
+                    edges_dict[edge]["coordinates"]['to'] = road_network.convertXY2LonLat(*e.getToNode().getCoord())
+                    
+                    to_coords = edges_dict[edge]["coordinates"]['to']
+                    from_coords = edges_dict[edge]["coordinates"]['from']
+                    edges_dict[edge]['center_coord'] = (to_coords[0] + from_coords[0]) / 2, (to_coords[1] + from_coords[1]) / 2
+                    
                 else:
                     edges_dict[edge] = {"to": node.getID()}
                     edges_dict[edge]["id"] = edge
@@ -63,16 +69,33 @@ def from_sumo_to_igraph_network(road_network):
                     edges_dict[edge]["speed_limit"] = e.getSpeed()
                     edges_dict[edge]["traveltime"] = e.getLength()/e.getSpeed()
                     
+                    if "coordinates" not in edges_dict[edge].keys():
+                        edges_dict[edge]["coordinates"] = {'from' : (0, 0), 
+                                                           'to' : road_network.convertXY2LonLat(*e.getToNode().getCoord())}
+                    
+                    
             for e in out_edges:
                 edge = e.getID()
                 if edge in edges_dict:
                     edges_dict[edge]["from"] = node.getID()
+                    edges_dict[edge]["coordinates"]['from'] = road_network.convertXY2LonLat(*e.getFromNode().getCoord())
+
+                    to_coords = edges_dict[edge]["coordinates"]['to']
+                    from_coords = edges_dict[edge]["coordinates"]['from']
+                    edges_dict[edge]['center_coord'] = (to_coords[0] + from_coords[0]) / 2, (to_coords[1] + from_coords[1]) / 2
+
                 else:
                     edges_dict[edge] = {"from": node.getID()}
                     edges_dict[edge]["id"] = edge
                     edges_dict[edge]["length"] = e.getLength()
                     edges_dict[edge]["speed_limit"] = e.getSpeed()
                     edges_dict[edge]["traveltime"] = e.getLength()/e.getSpeed()
+                    
+                    if "coordinates" not in edges_dict[edge].keys():
+                        edges_dict[edge]["coordinates"] = {'from' : road_network.convertXY2LonLat(*e.getFromNode().getCoord()), 
+                                                           'to' : (0, 0)}
+                    
+                    
         # Nodes with connections
         else:
             # add new connection nodes
@@ -82,24 +105,45 @@ def from_sumo_to_igraph_network(road_network):
                 nodes_dict[node_id] = {"in": [edge], "fc": 0}
                 if edge in edges_dict:
                     edges_dict[edge]["to"] = node_id
+                    edges_dict[edge]["coordinates"]['to'] = road_network.convertXY2LonLat(*e.getToNode().getCoord())
+                    
+                    to_coords = edges_dict[edge]["coordinates"]['to']
+                    edges_dict[edge]['center_coord'] = to_coords, to_coords
+
                 else:
                     edges_dict[edge] = {"to": node_id}
                     edges_dict[edge]["id"] = edge
                     edges_dict[edge]["length"] = e.getLength()
                     edges_dict[edge]["speed_limit"] = e.getSpeed()
                     edges_dict[edge]["traveltime"] = e.getLength()/e.getSpeed()
+                    
+                    if "coordinates" not in edges_dict[edge].keys():
+                        edges_dict[edge]["coordinates"] = {'from': (0, 0),
+                                                           'to' : road_network.convertXY2LonLat(*e.getToNode().getCoord())}
+                                                           
+                    
+
             for e in out_edges:
                 edge = e.getID()
                 node_id = edge+"_from"
                 nodes_dict[node_id] = {"out": [edge], "fc": 0}
                 if edge in edges_dict:
                     edges_dict[edge]["from"] = node_id
+                    edges_dict[edge]["coordinates"]['from'] = road_network.convertXY2LonLat(*e.getFromNode().getCoord())
+
+                    from_coords = edges_dict[edge]["coordinates"]['from']
+                    edges_dict[edge]['center_coord'] = from_coords, from_coords
                 else:
                     edges_dict[edge] = {"from": node_id}
                     edges_dict[edge]["id"] = edge
                     edges_dict[edge]["length"] = e.getLength()
                     edges_dict[edge]["speed_limit"] = e.getSpeed()
                     edges_dict[edge]["traveltime"] = e.getLength()/e.getSpeed()
+                    
+                    if "coordinates" not in edges_dict[edge].keys():
+                        edges_dict[edge]["coordinates"] = {'from' : road_network.convertXY2LonLat(*e.getFromNode().getCoord()), 
+                                                           'to' : (0, 0)}
+                    
                     
             for conn in node.getConnections():
                 from_edge = conn.getFrom().getID()
@@ -110,9 +154,12 @@ def from_sumo_to_igraph_network(road_network):
                 conn_attr["length"].append(0)
                 conn_attr["speed_limit"].append(-1)
                 conn_attr["traveltime"].append(0)
+                conn_attr["coordinates"].append({'from' : road_network.convertXY2LonLat(*node.getCoord()), 
+                                                'to' : road_network.convertXY2LonLat(*node.getCoord())})
+                conn_attr["center_coord"].append(road_network.convertXY2LonLat(*node.getCoord()))
                 
     edges_list = []
-    edges_attr = {"id":[], "length":[], "speed_limit":[], "traveltime":[]}
+    edges_attr = {"id":[], "length":[], "speed_limit":[], "traveltime":[], "coordinates":[], "center_coord":[]}
     
     for edge in edges_dict.keys():
         edges_list.append((edges_dict[edge]["from"], edges_dict[edge]["to"]))
@@ -120,13 +167,32 @@ def from_sumo_to_igraph_network(road_network):
         edges_attr["length"].append(edges_dict[edge]["length"])
         edges_attr["speed_limit"].append(edges_dict[edge]["speed_limit"])
         edges_attr["traveltime"].append(edges_dict[edge]["traveltime"])
+        edges_attr["coordinates"].append(edges_dict[edge]["coordinates"])
+        edges_attr["center_coord"].append(edges_dict[edge]["center_coord"])
         
     G_igraph_new = igraph.Graph(directed=True)
     G_igraph_new.add_vertices(list(nodes_dict.keys()))
     G_igraph_new.add_edges(edges_list, edges_attr)
     G_igraph_new.add_edges(connections_list, conn_attr)
     
-    G_igraph_new["edge_sumo_ig"] = {e["id"]: e.index for e in G_igraph_new.es}
+    G_igraph_new['edge_sumo_ig'] = dict() # to store the current edge index
+    G_igraph_new['edge_vertices'] = dict() # to convert edges to vertices
+    G_igraph_new['vertices_edge'] = dict() # to convert vertices to edges
+    G_igraph_new['connection_edges'] = set() # to store the connection edges
+
+    for e in G_igraph_new.es:
+        if e['id'] != 'connection':
+            G_igraph_new['edge_sumo_ig'][e['id']] = e.index
+            G_igraph_new['edge_vertices'][e['id']] = {'from' : e.source, 'to' : e.target}
+        else:
+            G_igraph_new['connection_edges'].add(e.index)
+        
+        G_igraph_new['vertices_edge'][(e.source, e.target)] = {'length' : e['length'], 'traveltime' : e['traveltime'], 'id' : G_igraph_new.get_eid(e.source, e.target)}
+
+        try:
+            G_igraph_new['vertices_edge'][(e.target, e.source)] = {'length' : e['length'], 'traveltime' : e['traveltime'], 'id' : G_igraph_new.get_eid(e.target, e.source)}
+        except:
+            pass
         
     return G_igraph_new
 
