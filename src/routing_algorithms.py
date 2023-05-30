@@ -6,6 +6,9 @@ import itertools
 from queue import PriorityQueue
 from collections import Counter
 
+# Saturation Cell Algorythm
+from shapely.geometry import Point, Polygon
+
 import warnings 
 
 
@@ -31,7 +34,7 @@ def apply_penalization(G, from_edge, to_edge, k, attribute, fun_2_apply, argumen
         if not(all_distinct and sp_k["sumo"] in path_list):
 
             original_cost = compute_path_cost(G, sp_k["ig"], attribute)
-            result_list.append({"edges": sp_k["sumo"], "ig" : sp_k["ig"], "original_cost": original_cost, "penalized_cost": sp_k["cost"]})
+            result_list.append({"edges": sp_k["sumo"], "ig" : G.es[sp_k["ig"]]['original_id'], "original_cost": original_cost, "penalized_cost": sp_k["cost"]})
             path_list.append(sp_k["sumo"])
 
 
@@ -236,8 +239,8 @@ def k_mdnsp(G, from_edge, to_edge, k, epsilon, attribute, remove_tmp_attribute=T
 
         # recalculate penalities
         for p1 in path_nsp:
-                for edge in p1:
-                    G.es[edge][f"tmp_{attribute}"] = G.es[edge][attribute]*f
+            for edge in p1:
+                G.es[edge][f"tmp_{attribute}"] = G.es[edge][attribute]*f
 
         sp = get_shortest_path(G, from_edge, to_edge, f"tmp_{attribute}")
             
@@ -270,7 +273,7 @@ def k_mdnsp(G, from_edge, to_edge, k, epsilon, attribute, remove_tmp_attribute=T
 
         edge_list_sumo = [e for e in G.es[path]["id"] if e != "connection"]
         original_cost = compute_path_cost(G, path, attribute)
-        result_list.append({"edges": edge_list_sumo, "original_cost": original_cost, "penalized_cost": -1})
+        result_list.append({"edges": edge_list_sumo, "ig": path, "original_cost": original_cost, "penalized_cost": -1})
     
 
     # remove the copy of the attribute from all the edges
@@ -282,7 +285,7 @@ def k_mdnsp(G, from_edge, to_edge, k, epsilon, attribute, remove_tmp_attribute=T
         warnings.warn(f'Returned {len(result_list)} distinct paths (instead of {k}).', RuntimeWarning)
     if len(result_list) == 0:
         warnings.warn(f'No paths found (try to increase epsilon) Returning the fastest path only.', RuntimeWarning)
-        result_list.append({"edges": sp_k["sumo"], "original_cost": sp_k["cost"], "penalized_cost": sp_k["cost"]})
+        result_list.append({"edges": sp_k["sumo"], "ig": sp_k["ig"], "original_cost": sp_k["cost"], "penalized_cost": sp_k["cost"]})
    
         
     return result_list
@@ -846,3 +849,71 @@ def k_shortest_paths(G, from_edge, to_edge, k, attribute):
         result_list.append(path_dict)
     
     return result_list
+
+
+# LUDOVICO'S ALGORYTHM: Saturation Cell Algorythm
+def saturation_cell_penalization(Graph, from_edge, to_edge, k, attribute, voronoi, all_distinct=True, remove_tmp_attribute=True, max_iter=1e3, phi = 1.5, eta = 2, adjust = 100, to_plot = True):
+
+    def make_gdf_from_geom(geom, shape_type = None):
+        if shape_type is not None:
+            result_gdf = gpd.GeoDataFrame(geometry = [shape_type(geom)]).set_crs('EPSG:4326')
+        else:
+            result_gdf = gpd.GeoDataFrame(geometry = geom).set_crs('EPSG:4326')
+        result_gdf.to_crs(result_gdf.crs)
+        return result_gdf
+    
+    resulting_ellipse, G = ellipse_subgraph(Graph, from_edge, to_edge, phi = phi, eta = eta)
+    ellipse = make_gdf_from_geom(resulting_ellipse.get_verts(), Polygon)
+    pt = make_gdf_from_geom([Point(*p) for p in G.es['center_coord']])
+    G.es['tile_ID'] = pt.sjoin(voronoi).sort_index()['tile_ID'].tolist()
+
+    G["edge_sumo_ig"] = {e['id'] : e.index for e in G.es}
+    G.es['saturation'] = 0
+    
+    # define the function to use to penalize the edge weights
+    def update_edge_weights_pp(edge_list, attribute, p=0):
+        counter = Counter(edge_list['tile_ID'])
+        for e in edge_list:
+            if e["id"] != "connection":
+                tile = e['tile_ID']
+                e['saturation'] += counter[tile] / adjust
+                e[attribute] *= (1+(e['saturation']))
+
+                
+    # arguments beyond edge_list and attribute (that are mandatory)
+    dict_args = {"p": 0}
+            
+    apply_to = "sp_edges"
+    
+    result_list = apply_penalization(G, from_edge, to_edge, k, attribute, update_edge_weights_pp, dict_args, 
+                                     apply_to=apply_to, all_distinct=all_distinct, 
+                                     remove_tmp_attribute=remove_tmp_attribute, max_iter=max_iter)
+
+    def normalize_min_max(values):
+        min_value = min(values)
+        max_value = max(values)
+        normalized_values = [(value - min_value) / (max_value - min_value) for value in values]
+        return normalized_values
+    
+    if to_plot:
+        tile_saturation = sorted(zip(G.es['tile_ID'], ((np.array(G.es['saturation']))/ 100)), key = lambda x: int(x[0]))
+
+        grouped_data = list()
+
+        for key, group in itertools.groupby(tile_saturation, key=lambda x: x[0]):
+            grouped_data.append((key, sum(item[1] for item in group)))
+
+        opacity = np.array(grouped_data, dtype = object)
+        opacity[:,0] = opacity[:,0].astype(int)
+        opacity[:,1] = normalize_min_max(opacity[:,1])
+
+        fix_opacity = np.zeros(len(voronoi))
+        fix_opacity[opacity[:,0].tolist()] = opacity[:,1].tolist()
+
+        voronoi = voronoi.copy(deep = True)
+        voronoi['saturation'] = fix_opacity
+        voronoi = voronoi.overlay(ellipse)
+    
+    del G
+    
+    return result_list, voronoi
