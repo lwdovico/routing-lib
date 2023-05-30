@@ -177,6 +177,8 @@ def from_sumo_to_igraph_network(road_network):
     G_igraph_new.add_vertices(list(nodes_dict.keys()))
     G_igraph_new.add_edges(edges_list, edges_attr)
     G_igraph_new.add_edges(connections_list, conn_attr)
+    G.es['original_id'] = range(len(G.es))
+    G.vs['original_id'] = range(len(G.vs))
     
     G_igraph_new['edge_sumo_ig'] = dict() # to store the current edge index
     G_igraph_new['edge_vertices'] = dict() # to convert edges to vertices
