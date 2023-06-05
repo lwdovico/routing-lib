@@ -554,13 +554,14 @@ def plateau_algorithm(G, from_edge, to_edge, k, epsilon, attribute, max_iter = 1
 
     assert epsilon >= 1, "Epsilon can be only greater or equal to 1"
 
+    or_G = G
+    
     if type(from_edge) != str or type(to_edge) != str:
         from_edge, to_edge = from_edge.getID(), to_edge.getID()
     
     if compute_in_subgraph:
         G.vs['original_idx'] = range(len(G.vs))
         
-        or_G = G
         _, G = ellipse_subgraph(G, from_edge, to_edge, phi = epsilon, eta = epsilon)
 
     def get_vertex(sumo_edge, pos):
