@@ -550,7 +550,7 @@ def kspmo(G, from_edge, to_edge, k, theta, attribute, max_iter = 1000):
     return PkDPwML_List
 
 
-def plateau_algorithm(G, from_edge, to_edge, k, epsilon, attribute, max_iter = 1000, compute_in_subgraph = True):
+def plateau_algorithm(G, from_edge, to_edge, k, epsilon, attribute, max_iter = 1000, compute_in_subgraph = True, min_size_subgraph = 0.05, path_epsilon_cutoff = False):
 
     assert epsilon >= 1, "Epsilon can be only greater or equal to 1"
 
@@ -561,8 +561,9 @@ def plateau_algorithm(G, from_edge, to_edge, k, epsilon, attribute, max_iter = 1
     
     if compute_in_subgraph:
         G.vs['original_idx'] = range(len(G.vs))
+        sp_k = get_shortest_path(G, from_edge, to_edge, attribute)
         
-        _, G = ellipse_subgraph(G, from_edge, to_edge, phi = epsilon, eta = epsilon)
+        _, G = ellipse_subgraph(G, from_edge, to_edge, phi = epsilon, eta = epsilon, min_dist = min_size_subgraph)
 
     def get_vertex(sumo_edge, pos):
         if pos == 'from':
@@ -654,7 +655,12 @@ def plateau_algorithm(G, from_edge, to_edge, k, epsilon, attribute, max_iter = 1
             
             return d_svt <= d_sp * epsilon
 
-        yield sp, sp
+        def valid_path(G, path, attribute, epsilon = 1):
+
+            return sum(G.es[path][attribute]) <= sp_k["cost"] * epsilon
+        
+        edge_sp = make_edges(sp)
+        yield edge_sp, edge_sp
 
         set_branches = {k : set(v) for k, v in sps_s.items()}
 
@@ -684,7 +690,13 @@ def plateau_algorithm(G, from_edge, to_edge, k, epsilon, attribute, max_iter = 1
                         d_svt = dist(to_plateau, attribute) + dist(from_plateau, attribute)
                         
                         if valid_plateau(d_svt, d_sp, epsilon):
-                            yield plateau_edges, alternative_path
+
+                            plat_edg = make_edges(plateau_edges)
+                            new_path = make_edges(alternative_path)
+
+                            if valid_path(or_G, new_path, attribute, epsilon) or not path_epsilon_cutoff:
+                                yield plat_edg, new_path
+
                             del set_branches[key]
                             break
 
@@ -696,7 +708,7 @@ def plateau_algorithm(G, from_edge, to_edge, k, epsilon, attribute, max_iter = 1
     try:
         sp = sps_s[t]
     except KeyError:
-        return [{'edges' : [], 'ig' : [], 'plateau' : [], 'original_cost' : 0, 'penalized_cost' : 0}]
+        return [{"edges": sp_k["sumo"], "ig": sp_k["ig"], "plateau": sp_k["ig"], "original_cost": sp_k["cost"], "penalized_cost": sp_k["cost"]}]
 
     d_sp = dist(sp, attribute)
 
@@ -724,7 +736,7 @@ def plateau_algorithm(G, from_edge, to_edge, k, epsilon, attribute, max_iter = 1
 
     # just the opposite of the dissimilarity
     def Sim(pi, pj):
-        return 1 - dis(G, pi, pj, attribute)
+        return 1 - dis(or_G, pi, pj, attribute)
 
     p = next(query)
 
@@ -760,8 +772,7 @@ def plateau_algorithm(G, from_edge, to_edge, k, epsilon, attribute, max_iter = 1
     output = list()
     
     for plateau, path in plateau_paths:
-        plateau = make_edges(plateau)
-        path = [or_G['edge_sumo_ig'][from_edge]]+make_edges(path)+[or_G['edge_sumo_ig'][to_edge]]
+        path = [or_G['edge_sumo_ig'][from_edge]]+path+[or_G['edge_sumo_ig'][to_edge]]
         epath = or_G.es[path]
         path_dict = dict()
         path_dict['edges'] = list(filter(lambda x: x != 'connection', epath['id']))
