@@ -355,7 +355,11 @@ def edge_list_to_gps_list(edge_list, road_network):
     return gps_points
 
 def compute_ellipse(G, from_edge, to_edge, phi = 1.5, eta = 2):
-
+    
+    # If the distance between origin and destination is lower than this
+    # it will return a minimal ellipse
+    MIN_DIST = 0.08
+    
     def get_center(s_lon, s_lat, t_lon, t_lat):
         return (s_lon + t_lon) / 2, (s_lat + t_lat) / 2
 
@@ -380,6 +384,10 @@ def compute_ellipse(G, from_edge, to_edge, phi = 1.5, eta = 2):
     center_point = get_center(s_lon, s_lat, t_lon, t_lat)
     st_dist = get_pythagoras(s_lon, s_lat, t_lon, t_lat)
     angle = get_angle(s_lon, s_lat, t_lon, t_lat)
+    
+    if st_dist <= MIN_DIST:
+        st_dist = MIN_DIST
+        eta /= 2
 
     # draw the ellipse using matplotlib
     ellipse = Ellipse(center_point, st_dist * phi, st_dist * phi / eta, angle)
