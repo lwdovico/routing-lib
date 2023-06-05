@@ -354,11 +354,7 @@ def edge_list_to_gps_list(edge_list, road_network):
         
     return gps_points
 
-def compute_ellipse(G, from_edge, to_edge, phi = 1.5, eta = 2):
-    
-    # If the distance between origin and destination is lower than this
-    # it will return a minimal ellipse
-    MIN_DIST = 0.05
+def compute_ellipse(G, from_edge, to_edge, phi = 1.5, eta = 2, min_dist = 0.05):
     
     def get_center(s_lon, s_lat, t_lon, t_lat):
         return (s_lon + t_lon) / 2, (s_lat + t_lat) / 2
@@ -377,7 +373,6 @@ def compute_ellipse(G, from_edge, to_edge, phi = 1.5, eta = 2):
     if type(from_edge) != str or type(to_edge) != str:
         from_edge, to_edge = from_edge.getID(), to_edge.getID()
 
-
     s_lon, s_lat = G.es.find(id = from_edge)['coordinates']['to']
     t_lon, t_lat = G.es.find(id = to_edge)['coordinates']['from']
     
@@ -385,8 +380,8 @@ def compute_ellipse(G, from_edge, to_edge, phi = 1.5, eta = 2):
     st_dist = get_pythagoras(s_lon, s_lat, t_lon, t_lat)
     angle = get_angle(s_lon, s_lat, t_lon, t_lat)
     
-    if st_dist <= MIN_DIST:
-        st_dist = MIN_DIST
+    if st_dist <= min_dist:
+        st_dist = min_dist
         eta = 1
 
     # draw the ellipse using matplotlib
@@ -394,8 +389,8 @@ def compute_ellipse(G, from_edge, to_edge, phi = 1.5, eta = 2):
 
     return ellipse
 
-def ellipse_subgraph(G, from_edge, to_edge, phi = 1.5, eta = 2):
-    ellipse = compute_ellipse(G, from_edge, to_edge, phi = phi, eta = eta)
+def ellipse_subgraph(G, from_edge, to_edge, phi = 1.5, eta = 2, min_dist = 0.05):
+    ellipse = compute_ellipse(G, from_edge, to_edge, phi = phi, eta = eta, min_dist = min_dist)
     vertices_coords = G['vertices_coords']
     idx_in_ellipse = ellipse.contains_points(vertices_coords[:,1].tolist())
     ellipsed_vert = vertices_coords[:,0][idx_in_ellipse].tolist()
