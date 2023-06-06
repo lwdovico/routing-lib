@@ -700,13 +700,13 @@ def plateau_algorithm(G, from_edge, to_edge, k, epsilon, attribute, max_iter = 1
                             del set_branches[key]
                             break
 
-    s = get_vertex(from_edge, 'to')
-    t = get_vertex(to_edge, 'from')
-
-    sps_s, sps_t = set_costs_get_trees(G, s, t)
-
     try:
+        s = get_vertex(from_edge, 'to')
+        t = get_vertex(to_edge, 'from')
+
+        sps_s, sps_t = set_costs_get_trees(G, s, t)
         sp = sps_s[t]
+        
     except KeyError:
         return [{"edges": sp_k["sumo"], "ig": sp_k["ig"], "plateau": sp_k["ig"], "original_cost": sp_k["cost"], "penalized_cost": sp_k["cost"]}]
 
