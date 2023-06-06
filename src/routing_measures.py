@@ -117,3 +117,61 @@ def div(G, path_list, attribute):
                 dis_list.append(dis(G, pi, pj, attribute)) 
                 
     return min(dis_list)
+
+
+def compute_driver_sources(list_routes, edge_tile_dict, origin=True):
+        
+    ds_dict = {}
+    
+    if origin:
+        s = 0
+    else:
+        s = -1
+    
+    for route in list_routes:
+        
+        edges = route
+        
+        origin = edges[s]
+        tile = edge_tile_dict[origin]
+        
+        for edge in edges:
+            if edge in ds_dict:
+                if tile in ds_dict[edge]:
+                    ds_dict[edge][tile] += 1
+                else:
+                    ds_dict[edge][tile] = 1
+                
+            else:
+                ds_dict[edge] = {}
+                ds_dict[edge][tile] = 1
+                
+    return ds_dict
+
+
+def compute_MDS(ds_dict, traffic_threshold):
+    mds_dict = {}
+    
+    for edge, ds in ds_dict.items():
+        # driver sources sorted by flow
+        ds_list = sorted(ds.items(), key=lambda x: x[1], reverse=True)
+        ds_flow = sum(x[1] for x in ds_list)
+        tmp_sum = 0
+        i = 0
+        mds_edge_dict = {}
+        while tmp_sum <= ds_flow*traffic_threshold:
+            mds_edge_dict[ds_list[i][0]] = ds_list[i][1]
+            tmp_sum += ds_list[i][1]
+            i += 1
+
+        mds_dict[edge] = mds_edge_dict
+        
+    return mds_dict
+
+
+def compute_k_road(mds):
+    k_road = {}
+    for edge, mds_dict in mds.items():
+        k_road[edge] = len(mds_dict)
+        
+    return k_road
