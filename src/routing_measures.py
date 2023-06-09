@@ -67,7 +67,7 @@ def compute_edge_capacity(sumo_edges):
             capacity = (1000+20*sl)*num_lanes
         # when the speed limit of a road segment sl ≥60, it is defined as a freeway
         elif sl>=60:
-            capacity = (1700+20*sl)*num_lanes
+            capacity = (1700+10*sl)*num_lanes
 
         edge_capacity[edge.getID()] = capacity
         
