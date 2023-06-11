@@ -111,7 +111,7 @@ def from_sumo_to_igraph_network(road_network):
                     edges_dict[edge]["coordinates"]['to'] = road_network.convertXY2LonLat(*e.getToNode().getCoord())
                     
                     to_coords = edges_dict[edge]["coordinates"]['to']
-                    edges_dict[edge]['center_coord'] = to_coords, to_coords
+                    edges_dict[edge]['center_coord'] = to_coords
 
                 else:
                     edges_dict[edge] = {"to": node_id}
@@ -135,7 +135,7 @@ def from_sumo_to_igraph_network(road_network):
                     edges_dict[edge]["coordinates"]['from'] = road_network.convertXY2LonLat(*e.getFromNode().getCoord())
 
                     from_coords = edges_dict[edge]["coordinates"]['from']
-                    edges_dict[edge]['center_coord'] = from_coords, from_coords
+                    edges_dict[edge]['center_coord'] = from_coords
                 else:
                     edges_dict[edge] = {"from": node_id}
                     edges_dict[edge]["id"] = edge
