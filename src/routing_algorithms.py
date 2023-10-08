@@ -812,6 +812,9 @@ def k_shortest_paths(G, from_edge, to_edge, k, attribute):
 
         return spur_path
 
+    def no_connection(path_list):
+        return list(filter(lambda x: x != 'connection', path_list))
+
     k_sp = []
     tmp_paths = []
     
@@ -835,7 +838,7 @@ def k_shortest_paths(G, from_edge, to_edge, k, attribute):
                 cost = sum(G.es[total_path][attribute])
 
                 # otherwise connection edges may be the only variation
-                if cost > previous_cost:
+                if cost > previous_cost or no_connection(G.es[total_path]['id']) != no_connection(G.es[k_sp[p-1]]['id']):
                     tmp_paths.append((cost, total_path))
         
         tmp_paths.sort()
