@@ -2,11 +2,9 @@ from routing_utils import *
 from routing_measures import dis, div 
 import itertools
 
-# KSPML and KSPMO
 from queue import PriorityQueue
 from collections import Counter
 
-# Saturation Cell Algorythm
 from shapely.geometry import Point, Polygon
 
 import warnings 
