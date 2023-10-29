@@ -44,6 +44,22 @@ def compute_edge_load(path_list, edge_list):
     return edge_load
 
 
+def compute_edge_load_normalized(G, path_list):
+
+    edge_load = {e : 0 for e in range(len(G.es))}
+
+    for path in path_list:
+        for edge in path:
+            edge_load[edge] += 1 / len(path_list)
+
+    return edge_load
+
+def get_load_balance_entropy(G, path_list):
+
+    edge_load = [el for el in compute_edge_load_normalized(G, path_list).values() if el != 0]
+
+    return -np.dot(edge_load, np.log2(edge_load))
+
 
 def compute_edge_capacity(sumo_edges):
 

@@ -1,5 +1,5 @@
-from routing_utils import *
-from routing_measures import dis, div 
+from .routing_utils import *
+from .routing_measures import dis, div 
 import itertools
 
 from queue import PriorityQueue
