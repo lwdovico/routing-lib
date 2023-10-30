@@ -1,14 +1,13 @@
 import igraph
-from igraph import Graph
-import sumolib
 import numpy as np
+from typing import List
+
+# for visualizing paths
 import folium
-import warnings
 import seaborn as sns
 
+# for testing functions
 from tqdm.notebook import tqdm
-
-from typing import List
 
 # for the ellipse
 import math

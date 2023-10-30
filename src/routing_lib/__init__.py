@@ -1,6 +1,6 @@
 """Small package with alternative routing algorithms and measures. Author: Ludovico Lemma"""
 
-__version__ = '0.0.6'
+__version__ = '0.0.7'
 
 from .routing_algorithms import *
 from .routing_measures import *

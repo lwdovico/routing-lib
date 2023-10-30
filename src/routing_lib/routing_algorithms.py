@@ -1,14 +1,12 @@
 from .routing_utils import *
-from .routing_measures import dis, div 
+from .routing_measures import dis, div
 import itertools
 
+# KSPML and KSPMO
 from queue import PriorityQueue
 from collections import Counter
 
-from shapely.geometry import Point, Polygon
-
-import warnings 
-
+import warnings
 
 
 def apply_penalization(G, from_edge, to_edge, k, attribute, fun_2_apply, arguments, apply_to="sp_edges", all_distinct=True, remove_tmp_attribute=True, max_iter=1e3):
