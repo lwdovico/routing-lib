@@ -1,5 +1,5 @@
 import igraph
-
+import numpy as np
 
 def distinct_edges_traveled(path_list):
     
