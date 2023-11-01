@@ -839,8 +839,11 @@ def k_shortest_paths(G, from_edge, to_edge, k, attribute):
                     tmp_paths.append((cost, total_path))
         
         tmp_paths.sort()
-        k_sp.append(tmp_paths[0][1])
-        previous_cost = tmp_paths[0][0]
+        
+        if tmp_paths:
+            k_sp.append(tmp_paths[0][1])
+            previous_cost = tmp_paths[0][0]
+
         tmp_paths = []
 
     result_list = list()
