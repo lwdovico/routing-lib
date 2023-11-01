@@ -791,8 +791,9 @@ def k_shortest_paths(G, from_edge, to_edge, k, attribute):
     The builtin function of igraph didn't work because of the connection edges of our network.
     This solution even if wrote in python was made as fast as the builtin algorithm.
     """
-    source = G['edge_vertices'][from_edge.getID()]['to']
-    target = G['edge_vertices'][to_edge.getID()]['from']
+    
+    source = G['edge_vertices'][from_edge]['to']
+    target = G['edge_vertices'][to_edge]['from']
 
     def yen_spur_path(G, spur_edge, target):
         spur_source = G.es[spur_edge].source
@@ -846,8 +847,8 @@ def k_shortest_paths(G, from_edge, to_edge, k, attribute):
 
     for path in k_sp:
         path_info_dict = dict()
-        origin_to_add = [G['edge_sumo_ig'][from_edge.getID()]] if [G['edge_sumo_ig'][from_edge.getID()]] != path[0] else []
-        dest_to_add = [G['edge_sumo_ig'][to_edge.getID()]] if [G['edge_sumo_ig'][to_edge.getID()]] != path[-1] else []
+        origin_to_add = [G['edge_sumo_ig'][from_edge]] if [G['edge_sumo_ig'][from_edge]] != path[0] else []
+        dest_to_add = [G['edge_sumo_ig'][to_edge]] if [G['edge_sumo_ig'][to_edge]] != path[-1] else []
 
         path = origin_to_add + path + dest_to_add
         epath = G.es[path]
