@@ -545,28 +545,32 @@ def kspmo(G, from_edge, to_edge, k, theta, attribute, max_iter = 1000):
 
     return PkDPwML_List
 
-
 def plateau_algorithm(G, from_edge, to_edge, k, epsilon, attribute, max_iter = 1000, compute_in_subgraph = True, min_size_subgraph = 0.02, path_epsilon_cutoff = False):
 
     assert epsilon >= 1, "Epsilon can be only greater or equal to 1"
 
+    G.vs['original_idx'] = range(len(G.vs))
+    sp_k = get_shortest_path(G, from_edge, to_edge, attribute)
     or_G = G
     
     if type(from_edge) != str or type(to_edge) != str:
         from_edge, to_edge = from_edge.getID(), to_edge.getID()
     
     if compute_in_subgraph:
-        G.vs['original_idx'] = range(len(G.vs))
-        sp_k = get_shortest_path(G, from_edge, to_edge, attribute)
-        
         _, G = ellipse_subgraph(G, from_edge, to_edge, phi = epsilon, eta = epsilon, min_dist = min_size_subgraph)
 
-    def get_vertex(sumo_edge, pos):
-        if pos == 'from':
-            return G.es.find(id = sumo_edge).source
-        if pos == 'to':
-            return G.es.find(id = sumo_edge).target
-      
+    def get_vertex(G, sumo_edge, pos):
+        try:
+            if pos == 'from':
+                return G.es.find(id = sumo_edge).source
+            if pos == 'to':
+                return G.es.find(id = sumo_edge).target
+        except:
+            if pos == 'to':
+                return G.es.find(id = sumo_edge).source
+            if pos == 'from':
+                return G.es.find(id = sumo_edge).target
+
 
     def make_edges(vertices):
         edges = list()
@@ -697,8 +701,8 @@ def plateau_algorithm(G, from_edge, to_edge, k, epsilon, attribute, max_iter = 1
                             break
 
     try:
-        s = get_vertex(from_edge, 'to')
-        t = get_vertex(to_edge, 'from')
+        s = get_vertex(G, from_edge, 'to')
+        t = get_vertex(G, to_edge, 'from')
 
         sps_s, sps_t = set_costs_get_trees(G, s, t)
         sp = sps_s[t]
