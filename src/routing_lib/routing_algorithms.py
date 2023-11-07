@@ -382,7 +382,7 @@ def next_ssvp_by_length(G, from_edge, to_edge, attribute, Q):
                 # get the last position of that vertex
                 end_index = len(ps_n_pn_t) - ps_n_pn_t[::-1].index(loop_edge) - 1
                 # slice off the elements in between
-                ps_n_pn_t = ps_n_pn_t[:start_index] + ps_n_pn_t[end_index+1:]
+                ps_n_pn_t = ps_n_pn_t[:start_index] + ps_n_pn_t[end_index:]
 
                 # get the path length
                 path_length = get_path_cost(G, ps_n_pn_t)
@@ -417,7 +417,9 @@ def kspml(G, from_edge, to_edge, k, theta, attribute, max_iter = 1000):
 
     if p == []: 
         # just in the case the from and to edges where not directly connected
-        return [{'edges' : [], 'ig' : [], 'original_cost' : 0, 'penalized_cost' : 0}]
+        sp = get_shortest_path(G, from_edge, to_edge, attribute)
+        sp['edges'] = sp['sumo']
+        return [sp]
 
     iter = 0
 
@@ -497,7 +499,9 @@ def kspmo(G, from_edge, to_edge, k, theta, attribute, max_iter = 1000):
 
     if p == []: 
         # just in the case the from and to edges where not directly connected
-        return [{'edges' : [], 'ig' : [], 'original_cost' : 0, 'penalized_cost' : 0}]
+        sp = get_shortest_path(G, from_edge, to_edge, attribute)
+        sp['edges'] = sp['sumo']
+        return [sp]
 
     iter = 0
 
@@ -545,46 +549,30 @@ def kspmo(G, from_edge, to_edge, k, theta, attribute, max_iter = 1000):
 
     return PkDPwML_List
 
-def plateau_algorithm(G, from_edge, to_edge, k, epsilon, attribute, max_iter = 1000, compute_in_subgraph = True, min_size_subgraph = 0.02, path_epsilon_cutoff = False):
+def plateau_algorithm(G, from_edge, to_edge, k, epsilon, attribute, max_iter = 1000, path_epsilon_cutoff = True):
 
-    assert epsilon >= 1, "Epsilon can be only greater or equal to 1"
-
-    G.vs['original_idx'] = range(len(G.vs))
-    sp_k = get_shortest_path(G, from_edge, to_edge, attribute)
-    or_G = G
-    
     if type(from_edge) != str or type(to_edge) != str:
         from_edge, to_edge = from_edge.getID(), to_edge.getID()
+		
+    assert epsilon >= 1, "Epsilon can be only greater or equal to 1"
+
+    sp_k = get_shortest_path(G, from_edge, to_edge, attribute)
     
-    if compute_in_subgraph:
-        _, G = ellipse_subgraph(G, from_edge, to_edge, phi = epsilon, eta = epsilon, min_dist = min_size_subgraph)
-
-    def get_vertex(G, sumo_edge, pos):
-        try:
-            if pos == 'from':
-                return G.es.find(id = sumo_edge).source
-            if pos == 'to':
-                return G.es.find(id = sumo_edge).target
-        except:
-            if pos == 'to':
-                return G.es.find(id = sumo_edge).source
-            if pos == 'from':
-                return G.es.find(id = sumo_edge).target
-
-
+    def get_vertex_sumo(G, edge, pos):
+        return G['edge_vertices'][edge][pos]
+		
     def make_edges(vertices):
         edges = list()
         prev_vert = vertices[0]
         for vid in range(1, len(vertices)):
             curr_vert = vertices[vid]
-            curr_edge = G['vertices_edge'][(G.vs[prev_vert]['original_idx'], G.vs[curr_vert]['original_idx'])]['id']
+            curr_edge = G['vertices_edge'][(G.vs[prev_vert].index, G.vs[curr_vert].index)]['id']
             edges.append(curr_edge)
             prev_vert = curr_vert
         return edges
 
     def dist(vertices, attribute):
-        edges = make_edges(vertices)
-        return sum(or_G.es[edges][attribute])
+        return sum(G.es[make_edges(vertices)][attribute])
 
     def set_costs_get_trees(G, s, t):
         ve_cost = G['vertices_edge']
@@ -604,7 +592,7 @@ def plateau_algorithm(G, from_edge, to_edge, k, epsilon, attribute, max_iter = 1
 
                 for vid in range(1, len(p)):
                     v_1 = p[vid]
-                    cost += ve_cost[(G.vs[v_0]['original_idx'], G.vs[v_1]['original_idx'])][attribute]
+                    cost += ve_cost[(G.vs[v_0].index, G.vs[v_1].index)][attribute]
                     if cost < rearranged_costs_s[v_1]:
                         rearranged_costs_s[v_1] = cost
                     v_0 = v_1
@@ -620,7 +608,7 @@ def plateau_algorithm(G, from_edge, to_edge, k, epsilon, attribute, max_iter = 1
                 for vid in range(1, len(p)):
                     v_1 = p[vid]
                     # since it is backward I go from v1 to v0
-                    cost += ve_cost[(G.vs[v_1]['original_idx'], G.vs[v_0]['original_idx'])][attribute]
+                    cost += ve_cost[(G.vs[v_1].index, G.vs[v_0].index)][attribute]
                     if cost < rearranged_costs_t[v_1]:
                         rearranged_costs_t[v_1] = cost
                     v_0 = v_1
@@ -636,12 +624,6 @@ def plateau_algorithm(G, from_edge, to_edge, k, epsilon, attribute, max_iter = 1
         G.vs['tmp_cost'] = new_cost
 
         to_return = {x[-1] : x for x in sps_s if x != []}, {x[-1] : x[::-1] for x in sps_t if x != []}
-
-        del new_cost
-        del sum_val
-        del dest_id_costs, origin_id_costs
-        del rearranged_costs_s, rearranged_costs_t
-        del sps_s, sps_t
 
         return to_return
     
@@ -694,20 +676,21 @@ def plateau_algorithm(G, from_edge, to_edge, k, epsilon, attribute, max_iter = 1
                             plat_edg = make_edges(plateau_edges)
                             new_path = make_edges(alternative_path)
 
-                            if valid_path(or_G, new_path, attribute, epsilon) or not path_epsilon_cutoff:
+                            if valid_path(G, new_path, attribute, epsilon) or not path_epsilon_cutoff:
                                 yield plat_edg, new_path
 
                             del set_branches[key]
                             break
 
     try:
-        s = get_vertex(G, from_edge, 'to')
-        t = get_vertex(G, to_edge, 'from')
+        s = get_vertex_sumo(G, from_edge, 'to')
+        t = get_vertex_sumo(G, to_edge, 'from')
 
         sps_s, sps_t = set_costs_get_trees(G, s, t)
         sp = sps_s[t]
         
     except KeyError:
+        del G.vs['tmp_cost']
         return [{"edges": sp_k["sumo"], "ig": sp_k["ig"], "plateau": sp_k["ig"], "original_cost": sp_k["cost"], "penalized_cost": sp_k["cost"]}]
 
     d_sp = dist(sp, attribute)
@@ -736,7 +719,7 @@ def plateau_algorithm(G, from_edge, to_edge, k, epsilon, attribute, max_iter = 1
 
     # just the opposite of the dissimilarity
     def Sim(pi, pj):
-        return 1 - dis(or_G, pi, pj, attribute)
+        return 1 - dis(G, pi, pj, attribute)
 
     p = next(query)
 
@@ -772,12 +755,12 @@ def plateau_algorithm(G, from_edge, to_edge, k, epsilon, attribute, max_iter = 1
     output = list()
     
     for plateau, path in plateau_paths:
-        path = [or_G['edge_sumo_ig'][from_edge]]+path+[or_G['edge_sumo_ig'][to_edge]]
-        epath = or_G.es[path]
+        path = [G['edge_sumo_ig'][from_edge]]+path+[G['edge_sumo_ig'][to_edge]]
+        epath = G.es[path]
         path_dict = dict()
         path_dict['edges'] = list(filter(lambda x: x != 'connection', epath['id']))
         path_dict['ig'] = path
-        path_dict['plateau'] = list(filter(lambda x: x != 'connection', or_G.es[plateau]['id']))
+        path_dict['plateau'] = list(filter(lambda x: x != 'connection', G.es[plateau]['id']))
         path_dict['original_cost'] = sum(epath[attribute])
         path_dict['penalized_cost'] = path_dict['original_cost']
         output.append(path_dict)
@@ -816,55 +799,60 @@ def k_shortest_paths(G, from_edge, to_edge, k, attribute):
     def no_connection(path_list):
         return list(filter(lambda x: x != 'connection', path_list))
 
-    k_sp = []
-    tmp_paths = []
-    
-    path = G.get_shortest_paths(source, target, weights = attribute, output="epath")[0]
-    cost = sum(G.es[path][attribute])
-    previous_cost = 0
-    k_sp.append(path)
-    
-    for p in range(1, k):
-        for i in range(len(k_sp[p-1])-1):
-            spur_edge = k_sp[p-1][i]
-            root_path = k_sp[p-1][:i]
-            
-            if G.es[spur_edge]['id'] == 'connection':
-                continue
-
-            spur_path = yen_spur_path(G, spur_edge, target)
-            
-            if spur_path != []:
-                total_path = root_path + spur_path
-                cost = sum(G.es[total_path][attribute])
-
-                # otherwise connection edges may be the only variation
-                if cost > previous_cost or no_connection(G.es[total_path]['id']) != no_connection(G.es[k_sp[p-1]]['id']):
-                    tmp_paths.append((cost, total_path))
+    try:
+        k_sp = []
         
-        tmp_paths.sort()
+        path = G.get_shortest_paths(source, target, weights = attribute, output="epath")[0]
+        cost = sum(G.es[path][attribute])
+        previous_cost = 0
+        k_sp.append(path)
         
-        if tmp_paths:
-            k_sp.append(tmp_paths[0][1])
-            previous_cost = tmp_paths[0][0]
-
-        tmp_paths = []
-
-    result_list = list()
-
-    for path in k_sp:
-        path_info_dict = dict()
-        origin_to_add = [G['edge_sumo_ig'][from_edge]] if [G['edge_sumo_ig'][from_edge]] != path[0] else []
-        dest_to_add = [G['edge_sumo_ig'][to_edge]] if [G['edge_sumo_ig'][to_edge]] != path[-1] else []
-
-        path = origin_to_add + path + dest_to_add
-        epath = G.es[path]
-
-        path_dict = dict()
-        path_dict['edges'] = list(filter(lambda x: x != 'connection', epath['id']))
-        path_dict['ig'] = path
-        path_dict['original_cost'] = sum(epath[attribute])
-        path_dict['penalized_cost'] = path_dict['original_cost']
-        result_list.append(path_dict)
     
-    return result_list
+        for p in range(1, k):
+            tmp_paths = []
+    
+            for i in range(len(k_sp[p-1])-1):
+                spur_edge = k_sp[p-1][i]
+                root_path = k_sp[p-1][:i]
+            
+                if G.es[spur_edge]['id'] == 'connection':
+                    continue
+    
+                spur_path = yen_spur_path(G, spur_edge, target)
+            
+                if spur_path != []:
+                    total_path = root_path + spur_path
+                    cost = sum(G.es[total_path][attribute])
+    
+                    # otherwise connection edges may be the only variation
+                    if cost > previous_cost or no_connection(G.es[total_path]['id']) != no_connection(G.es[k_sp[p-1]]['id']):
+                        tmp_paths.append((cost, total_path))
+        
+            tmp_paths.sort()
+        
+            if tmp_paths:
+                k_sp.append(tmp_paths[0][1])
+                previous_cost = tmp_paths[0][0]
+    
+        result_list = list()
+    
+        for path in k_sp:
+            path_info_dict = dict()
+            origin_to_add = [G['edge_sumo_ig'][from_edge]] if [G['edge_sumo_ig'][from_edge]] != path[0] else []
+            dest_to_add = [G['edge_sumo_ig'][to_edge]] if [G['edge_sumo_ig'][to_edge]] != path[-1] else []
+    
+            path = origin_to_add + path + dest_to_add
+            epath = G.es[path]
+    
+            path_dict = dict()
+            path_dict['edges'] = list(filter(lambda x: x != 'connection', epath['id']))
+            path_dict['ig'] = path
+            path_dict['original_cost'] = sum(epath[attribute])
+            path_dict['penalized_cost'] = path_dict['original_cost']
+            result_list.append(path_dict)
+        
+        return result_list
+    except:
+        sp = get_shortest_path(G, from_edge, to_edge, attribute)
+        sp['edges'] = sp['sumo']
+        return [sp]
