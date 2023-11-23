@@ -549,7 +549,16 @@ def kspmo(G, from_edge, to_edge, k, theta, attribute, max_iter = 1000):
 
     return PkDPwML_List
 
+# Fix rare cases where no plateau can be found
+
 def plateau_algorithm(G, from_edge, to_edge, k, epsilon, attribute, max_iter = 1000, path_epsilon_cutoff = True):
+    try:
+        out = plateau(G, from_edge, to_edge, k, epsilon, attribute, max_iter = 1000, path_epsilon_cutoff = True)
+    except:
+        out = no_randomization(G, from_edge, to_edge, attribute)
+    return out
+
+def plateau(G, from_edge, to_edge, k, epsilon, attribute, max_iter = 1000, path_epsilon_cutoff = True):
 
     if type(from_edge) != str or type(to_edge) != str:
         from_edge, to_edge = from_edge.getID(), to_edge.getID()

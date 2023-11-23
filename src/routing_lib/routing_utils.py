@@ -310,6 +310,8 @@ def visualize_paths(path_list, road_network, colors=None, opacity=1, map_f=None,
         color_list = [colors]*len(path_list)
     elif colors == "rand":
         color_list = sns.color_palette("colorblind", len(path_list)).as_hex()
+    else:
+        color_list = colors
         
         
     # transform to GPS points
